@@ -23,7 +23,7 @@ noise_det_mag = mag_mean / 1000; %~60dB noise floor
 noise_shaper_mag = mag_mean / 1000;
 
 %simulation time (in seconds)
-t_simulation = 10000e-9;
+t_simulation = 100000e-9;
 
 %gaussian shaping properties
 t_shape = 20e-9;%shaping time in seconds
@@ -66,9 +66,13 @@ end
 
 %this is ugly... is there a more creative way to do this?
 index = 1;
+event_space_tracker = [];
+event_space = 0;
 while index < num_tq
     sim_space(1,index) = 1;
-    index = index + floor(normrnd(rate_sep_mean_q, rate_sep_sd_q));
+    event_space = floor(normrnd(rate_sep_mean_q, rate_sep_sd_q));
+    event_space_tracker = horzcat(event_space_tracker, event_space);
+    index = index + event_space;
 end
 
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
@@ -76,6 +80,10 @@ if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     plot(sim_space(1,:),'-o')
     hold on;
     title('First Sim Space: impulses at event locations');
+    figure();
+    hist(event_space_tracker,30);
+    hold on;
+    title('Histogram of time between event locations');
 end
 
 %% Step 2: generate event time magnitudes
