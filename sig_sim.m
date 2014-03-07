@@ -30,9 +30,9 @@ t_shape = 20e-9;%shaping time in seconds
 
 %plots
 gen_all_plots = 0;
-gen_sig_gen_plots = 0;
-gen_sig_shaping_plots = 0;
-gen_dig_plots = 0;
+gen_sig_gen_plots = 1;
+gen_sig_shaping_plots = 1;
+gen_dig_plots = 1;
 gen_hit_find_plots = 1;
 
 %% First: generate simulation space
@@ -217,9 +217,19 @@ if (gen_all_plots == 1) || (gen_dig_plots == 1)
     title('Dig space 4 and 6 (before and after non-linear clipping)');
 end
 
-%% Step 7: hit-finding
+%% Step 7: Pedestal Subtraction
+dig_space(7,:) = dig_space(6,:) - offset_val/max_analog_val*max_val;
+
+if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
+    figure();
+    plot(dig_space(7,:), '-og');
+    hold on;
+    title('Dig space 7: Pedestal Subtraction');
+end
+
+%% Step 8: hit-finding
 %Set threshold based on the DC offset and the noise floor:
-threshold = (offset_val+(noise_det_mag+noise_shaper_mag)*6)/max_analog_val*max_val+10;
+threshold = ((noise_det_mag+noise_shaper_mag)*6)/max_analog_val*max_val+10;
 %threshold is the offset value, plus 6 sigma of the noise plus 10 counts.
 
 %number of samples on the edge of a hit to grab:
@@ -227,7 +237,7 @@ edge_grab = 2;
 
 if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     figure();
-    plot(dig_space(6,:), '-o');
+    plot(dig_space(7,:), '-o');
     hold on;
     line([1,num_samples],[threshold,threshold]);
     title('Samples with threshold drawn');
@@ -247,28 +257,28 @@ hit_id = 1; %hit_id holds the ID of the hit to be written out
 
 while index <= num_samples
     %entering the loop we assume that we are not in the middle of a hit
-    if dig_space(6,index) >= threshold;
+    if dig_space(7,index) >= threshold;
         %if this is true, then we have just come to the first above
         %threshold sample of a hit.
         if index <= edge_grab %make sure we don't try to access samples which don't exist
             hit_locker{hit_id}(1) = 1;%assign 1 to the hit location
             hit_index = 2;
             while (hit_index-1 <= index-1)
-                hit_locker{hit_id}(hit_index) = dig_space(6,hit_index-1);
+                hit_locker{hit_id}(hit_index) = dig_space(7,hit_index-1);
                 hit_index = hit_index + 1;
             end
         else
             hit_locker{hit_id}(1) = index-edge_grab;
             hit_index = 2;
             while (hit_index-1 <= edge_grab)
-                hit_locker{hit_id}(hit_index) = dig_space(6,index-edge_grab+hit_index-2);    %hit_index-2 is zero for the first iteration
+                hit_locker{hit_id}(hit_index) = dig_space(7,index-edge_grab+hit_index-2);    %hit_index-2 is zero for the first iteration
                 hit_index = hit_index + 1;
             end
         end
         %ok, now we have gathered all of the previous hits, time to start
         %gathering the normal hits
-        while (dig_space(6,index) >= threshold)
-            hit_locker{hit_id}(hit_index) = dig_space(6,index);
+        while (dig_space(7,index) >= threshold)
+            hit_locker{hit_id}(hit_index) = dig_space(7,index);
             hit_index = hit_index + 1;
             index = index + 1;
         end
@@ -279,13 +289,13 @@ while index <= num_samples
         
         if (index + edge_grab) > num_samples
             while index + end_index <= num_samples
-                hit_locker{hit_id}(hit_index) = dig_space(6,index+end_index-1);
+                hit_locker{hit_id}(hit_index) = dig_space(7,index+end_index-1);
                 end_index = end_index + 1;
                 hit_index = hit_index + 1;
             end
         else
             while end_index <= edge_grab
-                hit_locker{hit_id}(hit_index) = dig_space(6,index+end_index-1);
+                hit_locker{hit_id}(hit_index) = dig_space(7,index+end_index-1);
                 end_index = end_index + 1;
                 hit_index = hit_index + 1;
             end
@@ -319,11 +329,46 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     line([1,num_samples],[threshold,threshold]);
     title('Hits only with threshold line');
     figure();
-    plot(dig_space(6,:), '-o');
+    plot(dig_space(7,:), '-o');
     hold on;
     plot(x_hit, y_hit, 'xr','MarkerSize',15);
     line([1,num_samples],[threshold,threshold]);
     title('Hits only with threshold line');
 end
 
-        
+%% Step 9: Hit re-construction
+for index = (1:num_hits)
+    [temp_curve, temp_gof] = fit((1:length(hit_locker{1,index})-1)',hit_locker{1,index}(2:length(hit_locker{1,index}))','gauss1');
+    hit_locker{2,index} = temp_curve;
+    hit_locker{3,index} = temp_gof.rsquare;
+    %figure();
+    %plot(hit_locker{2,index},(1:length(hit_locker{1,index})-1),hit_locker{1,index}(2:length(hit_locker{1,index})));
+    %waitforbuttonpress;
+end
+r_squareds = [hit_locker{3,:}];
+fprintf('Average R^2 = %d Average sigma = %d \n',mean(r_squareds),std(r_squareds));
+
+%% Step 10: Hit re-construction 2
+y_hit2 = zeros(num_hits);
+x_hit2 = zeros(num_hits);
+for index = (1:num_hits)
+    y_hit2(index) = hit_locker{2,index}.a1*max_analog_val/max_val;
+    x_hit2(index) = (hit_locker{2,index}.b1+hit_locker{1,index}(1))*tq_sample-shape_mean;
+end
+if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
+    figure();
+    plot(x_hit2,y_hit2, '*r');
+    hold on;
+    title('Hit Locations')
+    figure();
+    plot(x_hit2,y_hit2, '*r','MarkerSize', 10);
+    hold on;
+    plot(sim_space(2,:), '-o');
+    title('Hit Locations overlayed on Orig. Hits');
+    figure();
+    plot(x_hit2,y_hit2, '*r','MarkerSize', 10);
+    hold on;
+    plot(sim_space(4,:), '-o');
+    title('Hit Locations overlayed on Orig. Shaped Hits');
+end
+
