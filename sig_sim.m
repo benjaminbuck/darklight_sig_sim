@@ -7,14 +7,14 @@ tq = 100e-12; %time quanta in seconds
 
 %event rate information (seconds)
 rate_sep_mean = 1/5e6;
-rate_sep_sd = rate_sep_mean/3;
+rate_sep_sd = rate_sep_mean;
 
 %event magnitude information
 mag_mean = 1;
 mag_sd = 0.4;
 
 %Sampeling information (seconds)
-t_sample = 1/150e6;
+t_sample = 1/190e6;
 sample_bits = 10;
 
 %Noise information
@@ -23,7 +23,7 @@ noise_det_mag = mag_mean / 1000; %~60dB noise floor
 noise_shaper_mag = mag_mean / 1000;
 
 %simulation time (in seconds)
-t_simulation = 100000e-9;
+t_simulation = 10000e-9;
 
 %gaussian shaping properties
 t_shape = 20e-9;%shaping time in seconds
@@ -346,7 +346,7 @@ end
 
 %% Step 9: Hit re-construction
 for index = (1:num_hits)
-    [temp_curve, temp_gof] = fit((1:length(hit_locker{1,index})-1)',hit_locker{1,index}(2:length(hit_locker{1,index}))','gauss1');
+    [temp_curve, temp_gof] = fit((1:length(hit_locker{1,index})-1)',hit_locker{1,index}(2:length(hit_locker{1,index}))','gauss1', 'Upper', [max_val, inf, inf], 'Lower', [-1*max_val,0,0]);
     hit_locker{2,index} = temp_curve;
     hit_locker{3,index} = temp_gof.rsquare;
     %figure();
@@ -357,8 +357,8 @@ r_squareds = [hit_locker{3,:}];
 fprintf('Average R^2 = %d Average sigma = %d \n',mean(r_squareds),std(r_squareds));
 
 %% Step 10: Hit re-construction 2
-y_hit2 = zeros(num_hits);
-x_hit2 = zeros(num_hits);
+y_hit2 = zeros(num_hits,1);
+x_hit2 = zeros(num_hits,1);
 for index = (1:num_hits)
     y_hit2(index) = hit_locker{2,index}.a1*max_analog_val/max_val;
     x_hit2(index) = (hit_locker{2,index}.b1+hit_locker{1,index}(1))*tq_sample-shape_mean;
@@ -367,12 +367,20 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     figure();
     plot(x_hit2,y_hit2, '*r');
     hold on;
-    title('Hit Locations')
+    title('Hit Locations');
+    
+%     figure();
+%     plot(x_hit2,y_hit2, '*r','MarkerSize', 10);
+%     hold on;
+%     plot(dig_space(7,:), '-o');
+%     title('Hit Locations overlayed on Dig Hits');
+    
     figure();
     plot(x_hit2,y_hit2, '*r','MarkerSize', 10);
     hold on;
     plot(sim_space(2,:), '-o');
     title('Hit Locations overlayed on Orig. Hits');
+    
     figure();
     plot(x_hit2,y_hit2, '*r','MarkerSize', 10);
     hold on;
