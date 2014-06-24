@@ -1,3 +1,4 @@
+%% General Script Parameters
 %Script to simulate events in proton detector for darklight
 clear;
 close all;
@@ -6,16 +7,21 @@ close all;
 tq = 100e-12; %time quanta in seconds
 
 %event rate information (seconds)
-rate_sep_mean = 1/5e6;
-rate_sep_sd = rate_sep_mean;
+rate_sep_mean = 1/100e3;
 
 %event magnitude information
 mag_mean = 1;
 mag_sd = 0.4;
+%!!!!TO DO CHECK THIS DIST...
 
 %Sampeling information (seconds)
 t_sample = 1/190e6;
 sample_bits = 10;
+
+sample_by_quanta = t_sample / tq;
+if sample_by_quanta < 10
+    error('gen_prop:quanta_size_err', 'Check quanta size')
+end
 
 %Noise information
 noise_det_mag = mag_mean / 1000; %~60dB noise floor
@@ -23,7 +29,7 @@ noise_det_mag = mag_mean / 1000; %~60dB noise floor
 noise_shaper_mag = mag_mean / 1000;
 
 %simulation time (in seconds)
-t_simulation = 10000e-9;
+t_simulation = 1000e-6;
 
 %gaussian shaping properties
 t_shape = 20e-9;%shaping time in seconds
@@ -58,7 +64,6 @@ dig_space = zeros(num_digital_steps, num_samples);
 %generating a gaussian amount of time with an average of
 %rate_sep_mean and a standard deviation of rate_sep_sd.
 rate_sep_mean_q = rate_sep_mean / tq;
-rate_sep_sd_q = rate_sep_sd / tq;
 
 if rate_sep_mean_q < 100
     error('sig_sim:rate_sep_err', 'Rate separation too small')
@@ -70,7 +75,7 @@ event_space_tracker = [];
 event_space = 0;
 while index < num_tq
     sim_space(1,index) = 1;
-    event_space = floor(normrnd(rate_sep_mean_q, rate_sep_sd_q));
+    event_space = floor(exprnd(rate_sep_mean_q));
     event_space_tracker = horzcat(event_space_tracker, event_space);
     index = index + event_space;
 end
