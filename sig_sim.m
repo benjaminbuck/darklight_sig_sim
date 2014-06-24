@@ -101,6 +101,15 @@ if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     title('Second Sim Space: impulses at event locations w gaussian magnitude');
 end
 
+%% Step 2a: generate event / time pairs
+input_hits = [];
+for index = 1:num_tq
+    if (sim_space(2,index) ~= 0)
+        input_hits = [input_hits, [index ; sim_space(2,index)]];
+    end
+end
+
+
 %% Step 3: generate noise events
 sim_space(3,:) = sim_space(2,:)+normrnd(0, noise_det_mag, [1, num_tq]);
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
@@ -241,6 +250,18 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
 end
 
 %% Step 8: hit-finding
+%
+%Here we introduce the concept of the hit locker
+%hit_locker{1,:} contains a vector.  The first element in the vector
+%contains the sample number from dig_space(7,:).  The remaining elements in
+%the vector contain values from dig_space(7,:) starting at the sample
+%number.
+%hit_locker{2,:} contains the fit data from each of the hits located above
+%hit_locker{3,:} contains the rsquared value from the fit
+%hit_locker{4,:} contains the equivilant analog value of the hit
+%hit_locker{5,:} contains the equivilant time of the hit
+%hit_locker{6,:} contains the index of the input_hit vector most closely
+%associated with the hit
 %Set threshold based on the DC offset and the noise floor:
 threshold = ((noise_det_mag+noise_shaper_mag)*6)/max_analog_val*max_val+10;
 %threshold is the offset value, plus 6 sigma of the noise plus 10 counts.
@@ -362,34 +383,29 @@ r_squareds = [hit_locker{3,:}];
 fprintf('Average R^2 = %d Average sigma = %d \n',mean(r_squareds),std(r_squareds));
 
 %% Step 10: Hit re-construction 2
-y_hit2 = zeros(num_hits,1);
-x_hit2 = zeros(num_hits,1);
+% hit_locker{4,:} = zeros(num_hits,1);%implement pre-allocation in the
+% future.
+% hit_locker{5,:} = zeros(num_hits,1);
 for index = (1:num_hits)
-    y_hit2(index) = hit_locker{2,index}.a1*max_analog_val/max_val;
-    x_hit2(index) = (hit_locker{2,index}.b1+hit_locker{1,index}(1))*tq_sample-shape_mean;
+    hit_locker{4,index} = hit_locker{2,index}.a1*max_analog_val/max_val; %y values
+    hit_locker{5,index} = (hit_locker{2,index}.b1+hit_locker{1,index}(1))*tq_sample-shape_mean; %x values
 end
 if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
-    figure();
-    plot(x_hit2,y_hit2, '*r');
-    hold on;
-    title('Hit Locations');
-    
-%     figure();
-%     plot(x_hit2,y_hit2, '*r','MarkerSize', 10);
-%     hold on;
-%     plot(dig_space(7,:), '-o');
-%     title('Hit Locations overlayed on Dig Hits');
     
     figure();
-    plot(x_hit2,y_hit2, '*r','MarkerSize', 10);
+    plot([hit_locker{5,:}],[hit_locker{4,:}], '*r','MarkerSize', 10);
     hold on;
-    plot(sim_space(2,:), '-o');
+    plot(input_hits(1,:),input_hits(2,:), 'ob');
     title('Hit Locations overlayed on Orig. Hits');
     
     figure();
-    plot(x_hit2,y_hit2, '*r','MarkerSize', 10);
+    plot([hit_locker{5,:}],[hit_locker{4,:}], '*r','MarkerSize', 10);
     hold on;
     plot(sim_space(4,:), '-o');
     title('Hit Locations overlayed on Orig. Shaped Hits');
 end
 
+%% Step 11: Hit reconstruction error estimation 1
+%In this first pass we find the orig hit which is closest to the
+%reconstructed hit
+%we will locate in time only for the time being.
