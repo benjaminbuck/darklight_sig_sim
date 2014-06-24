@@ -15,7 +15,7 @@ mag_sd = 0.4;
 %!!!!TO DO CHECK THIS DIST...
 
 %Sampeling information (seconds)
-t_sample = 1/190e6;
+t_sample = 1/100e6;
 sample_bits = 10;
 
 sample_by_quanta = t_sample / tq;
@@ -261,6 +261,10 @@ end
 %hit_locker{4,:} contains the equivilant analog value of the hit
 %hit_locker{5,:} contains the equivilant time of the hit
 %hit_locker{6,:} contains the index of the input_hit vector most closely
+%hit_locker{7,:} contains the time difference between the hit and it's
+%match
+%hit_locker{8,:} contains the amplitude difference between the hit and it's
+%match
 %associated with the hit
 %Set threshold based on the DC offset and the noise floor:
 threshold = ((noise_det_mag+noise_shaper_mag)*6)/max_analog_val*max_val+10;
@@ -405,7 +409,58 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     title('Hit Locations overlayed on Orig. Shaped Hits');
 end
 
-%% Step 11: Hit reconstruction error estimation 1
+%% Step 11: Hit reconstruction error estimation
 %In this first pass we find the orig hit which is closest to the
 %reconstructed hit
 %we will locate in time only for the time being.
+
+for index = 1:num_hits
+    [~,hit_locker{6,index}] = min(abs(input_hits(1,:)-hit_locker{5,index})); %here we locate the smallest time difference
+    hit_locker{7,index} = hit_locker{5,index}-input_hits(1,hit_locker{6,index}); %publish the time difference
+    hit_locker{8,index} = hit_locker{4,index}-input_hits(2,hit_locker{6,index}); %publish amplitude difference
+end
+
+%now detect if any cells have the same index as their previous
+error_locker=[];
+hit_duplicates=[];
+[~,hit_duplicates] = find([hit_locker{6,:},0]-[0,hit_locker{6,:}]==0);
+if (~isempty(hit_duplicates))
+    for index = 1:length(hit_duplicates)
+        if (abs(hit_locker{7,hit_duplicates(index)}) < abs(hit_locker{7,hit_duplicates(index)-1}))
+            error_locker = [error_locker,hit_locker(:,hit_duplicates(index))]; %move the error to the error locker
+            hit_locker(:,hit_duplicates(index)) = []; %remove the data from the hit locker
+            fprintf('a');
+        else
+            error_locker = [error_locker,hit_locker(:,hit_duplicates(index)-1)]; %move the error to the error locker
+            hit_locker(:,hit_duplicates(index)-1) = []; %remove the data from the hit locker
+        end
+        num_hits = num_hits - 1;
+    end
+end
+
+
+%% Step 12: analysis
+
+fprintf('Number of errors detected: %d \n',length(hit_duplicates));
+
+timing_error_mean = mean([hit_locker{7,:}])/tq;
+timing_error_std = std([hit_locker{7,:}])/tq;
+amplitude_error_mean = mean([hit_locker{8,:}]);
+amplitude_error_std = std([hit_locker{8,:}]);
+
+fprintf('Timing error: %d, Sigma: %d\n',timing_error_mean,timing_error_std);
+fprintf('Amplitude error: %d, Sigma: %d\n',amplitude_error_mean,amplitude_error_std);
+
+
+if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
+    
+    figure();
+    hist([hit_locker{7,:}]/tq,30);
+    hold on;
+    title('Error in timing reconstruction');
+    
+    figure();
+    hist([hit_locker{8,:}],30);
+    hold on;
+    title('Error in amplitude reconstruction');
+end
