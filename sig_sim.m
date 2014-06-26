@@ -2,6 +2,7 @@
 %Script to simulate events in proton detector for darklight
 clear;
 close all;
+tic;
 
 %first define some constants:
 tq = 100e-12; %time quanta in seconds
@@ -24,15 +25,15 @@ if sample_by_quanta < 10
 end
 
 %Noise information
-noise_det_mag = mag_mean / 1000; %~60dB noise floor
+noise_det_mag = mag_mean / 10000; %~80dB noise floor
 
-noise_shaper_mag = mag_mean / 1000;
+noise_shaper_mag = mag_mean / 10000;
 
 %simulation time (in seconds)
-t_simulation = 1000e-6;
+t_simulation = 500e-6;
 
 %gaussian shaping properties
-t_shape = 20e-9;%shaping time in seconds
+t_shape = 40e-9;%shaping time in seconds
 
 %plots
 gen_all_plots = 0;
@@ -41,7 +42,10 @@ gen_sig_shaping_plots = 1;
 gen_dig_plots = 1;
 gen_hit_find_plots = 1;
 
+fprintf('gen parameters duration: %d\n',toc);
+
 %% First: generate simulation space
+tic;
 num_tq = ceil(t_simulation/tq);
 if num_tq < 100
     error('sig_sim:time_scale_err', 'Check time scale')
@@ -59,10 +63,13 @@ num_samples = ceil(num_tq / tq_sample);
 num_digital_steps = 6;
 dig_space = zeros(num_digital_steps, num_samples);
 
+fprintf('sample space generation duration: %d\n',toc);
+
 %% Step 1: generate event time locations
 %We do this by saying that time quanta 0 is an event and then
 %generating a gaussian amount of time with an average of
 %rate_sep_mean and a standard deviation of rate_sep_sd.
+tic;
 rate_sep_mean_q = rate_sep_mean / tq;
 
 if rate_sep_mean_q < 100
@@ -91,7 +98,10 @@ if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     title('Histogram of time between event locations');
 end
 
+fprintf('Step 1 duration: %d\n',toc);
+
 %% Step 2: generate event time magnitudes
+tic;
 sim_space(2,:) = abs(normrnd(mag_mean, mag_sd, [1, num_tq])) .* sim_space(1,:);
 
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
@@ -100,17 +110,21 @@ if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     hold on;
     title('Second Sim Space: impulses at event locations w gaussian magnitude');
 end
+fprintf('Step 2 duration: %d\n',toc);
 
 %% Step 2a: generate event / time pairs
+tic;
 input_hits = [];
 for index = 1:num_tq
     if (sim_space(2,index) ~= 0)
         input_hits = [input_hits, [index ; sim_space(2,index)]];
     end
 end
+fprintf('Step 2a duration: %d\n',toc);
 
 
 %% Step 3: generate noise events
+tic;
 sim_space(3,:) = sim_space(2,:)+normrnd(0, noise_det_mag, [1, num_tq]);
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     figure();
@@ -118,10 +132,12 @@ if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     hold on;
     title('Third Sim Space: noise before shaper');
 end
+fprintf('Step 3 duration: %d\n',toc);
 %%%TODO: investigate if this is the distro of noise we'd actually see.  May
 %%%not make a difference in principle, but worth looking into. (pink noise)
 %% Step 4: generate shaping
 %first pass at shaping alg.
+tic;
 
 %reminder of gaussian : g(x) = (1/(sd*sqrt(2*pi)))*exp((-1/2)*((x-mean)/sd)^2)
 %we say that the shaping time is equal to 6 sigma.  So:
@@ -131,7 +147,9 @@ shape_mean = shape_sd*3;
 %now we generate the shape coeff
 shape_coeff = (1/(shape_sd*sqrt(2*pi)))*exp((-1/2)*(((1:9*shape_sd)-shape_mean)/shape_sd).^2);
 %now we normalize the shape_coeff
-shape_coeff = shape_coeff / (1/(shape_sd*sqrt(2*pi)));
+%shape_coeff = shape_coeff / (1/(shape_sd*sqrt(2*pi)));
+%above was old.  Now we integrate.
+shape_coeff = shape_coeff/sum(shape_coeff);
 
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     figure();
@@ -154,8 +172,10 @@ if (gen_all_plots == 1) || (gen_sig_shaping_plots == 1)
     hold on;
     title('Fourth Sim Space: shaped events')
 end
+fprintf('Step 4 duration: %d\n',toc);
 
 %% Step 5: add electronic noise to output
+tic;
 sim_space(5,:) = sim_space(4,:)+normrnd(0, noise_shaper_mag, [1, num_tq]);
 if (gen_all_plots == 1) || (gen_sig_shaping_plots == 1)
     figure();
@@ -163,11 +183,12 @@ if (gen_all_plots == 1) || (gen_sig_shaping_plots == 1)
     hold on;
     title('Fifth Sim Space: noise after shaper');
 end
+fprintf('Step 5 duration: %d\n',toc);
 
 %%%TODO: investigate if this is the distro of noise we'd actually see.  May
 %%%not make a difference in principle, but worth looking into. (pink noise)
-%% Step 4: generate sampling times
-
+%% Step 6: generate sampling times
+tic;
 dig_space(2,:) = sim_space(5,(1:tq_sample:num_tq));
 dig_space(1,:) = (1:tq_sample:num_tq);
 if (gen_all_plots == 1) || (gen_dig_plots == 1)
@@ -181,12 +202,14 @@ if (gen_all_plots == 1) || (gen_dig_plots == 1)
     plot(dig_space(1,:),dig_space(2,:), 'r*', 'MarkerSize', 10)
     title('Samples overlayed on shaped signal');
 end
+fprintf('Step 6 duration: %d\n',toc);
 
-%% Step 5: quantize digital samples
+%% Step 7: quantize digital samples
 %max value calculation
+tic;
 max_val = 2^sample_bits-1;
-max_analog_val = mag_sd*5;
-offset_val = mag_sd*0.8;
+max_analog_val = mag_sd*5*max(shape_coeff);
+offset_val = mag_sd*0.8*max(shape_coeff);
 
 %insert clipping function here.
 dig_space(3,:) = dig_space(2,:); %placeholder for clipped values
@@ -214,8 +237,10 @@ if (gen_all_plots == 1) || (gen_dig_plots == 1)
     hold on;
     title('Dig space 5: Quantization error in LSBs');
 end
+fprintf('Step 7 duration: %d\n',toc);
 
-%% Step 6: non-linear cliping operation
+%% Step 8: non-linear cliping operation
+tic;
 dig_space(6,:) = dig_space(4,:);
 for index = (1:num_samples)
     if dig_space(6,index) > max_val
@@ -238,8 +263,10 @@ if (gen_all_plots == 1) || (gen_dig_plots == 1)
     plot(dig_space(6,:), '-*g', 'MarkerSize', 10);
     title('Dig space 4 and 6 (before and after non-linear clipping)');
 end
+fprintf('Step 8 duration: %d\n',toc);
 
-%% Step 7: Pedestal Subtraction
+%% Step 9: Pedestal Subtraction
+tic;
 dig_space(7,:) = dig_space(6,:) - offset_val/max_analog_val*max_val;
 
 if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
@@ -248,8 +275,10 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     hold on;
     title('Dig space 7: Pedestal Subtraction');
 end
+fprintf('Step 9 duration: %d\n',toc);
 
-%% Step 8: hit-finding
+%% Step 10: hit-finding
+tic;
 %
 %Here we introduce the concept of the hit locker
 %hit_locker{1,:} contains a vector.  The first element in the vector
@@ -373,8 +402,10 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     line([1,num_samples],[threshold,threshold]);
     title('Hits only with threshold line');
 end
+fprintf('Step 10 duration: %d\n',toc);
 
-%% Step 9: Hit re-construction
+%% Step 11: Hit re-construction
+tic;
 for index = (1:num_hits)
     [temp_curve, temp_gof] = fit((1:length(hit_locker{1,index})-1)',hit_locker{1,index}(2:length(hit_locker{1,index}))','gauss1', 'Upper', [max_val, inf, inf], 'Lower', [-1*max_val,0,0]);
     hit_locker{2,index} = temp_curve;
@@ -385,8 +416,10 @@ for index = (1:num_hits)
 end
 r_squareds = [hit_locker{3,:}];
 fprintf('Average R^2 = %d Average sigma = %d \n',mean(r_squareds),std(r_squareds));
+fprintf('Step 11 duration: %d\n',toc);
 
-%% Step 10: Hit re-construction 2
+%% Step 12: Hit re-construction 2
+tic;
 % hit_locker{4,:} = zeros(num_hits,1);%implement pre-allocation in the
 % future.
 % hit_locker{5,:} = zeros(num_hits,1);
@@ -408,8 +441,10 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     plot(sim_space(4,:), '-o');
     title('Hit Locations overlayed on Orig. Shaped Hits');
 end
+fprintf('Step 12 duration: %d\n',toc);
 
-%% Step 11: Hit reconstruction error estimation
+%% Step 13: Hit reconstruction error estimation
+tic;
 %In this first pass we find the orig hit which is closest to the
 %reconstructed hit
 %we will locate in time only for the time being.
@@ -424,27 +459,39 @@ end
 error_locker=[];
 hit_duplicates=[];
 [~,hit_duplicates] = find([hit_locker{6,:},0]-[0,hit_locker{6,:}]==0);
-if (~isempty(hit_duplicates))
+%the above line finds duplicates, but only duplicates which are next to
+%eachother.
+num_errors = length(hit_duplicates);
+
+while (~isempty(hit_duplicates))    %now go over each of the duplicates and remove the error hit.
     for index = 1:length(hit_duplicates)
-        if (abs(hit_locker{7,hit_duplicates(index)}) < abs(hit_locker{7,hit_duplicates(index)-1}))
-            error_locker = [error_locker,hit_locker(:,hit_duplicates(index))]; %move the error to the error locker
-            hit_locker(:,hit_duplicates(index)) = []; %remove the data from the hit locker
-            fprintf('a');
+        %we access the hit locker in the following way
+        %hit_locker{7,hit_duplicates(index)-(index-1)}
+        %The seven specifies the correct line in the hit locker
+        %the hit_duplicates vector contains the list of index in the hit
+        %locker of all hits which are duplicated.  As we cycle through the
+        %for loop, we remove a hit from the hit locker with every
+        %iteration, so we add the -(index-1) to account for this
+        if (abs(hit_locker{7,hit_duplicates(index)-(index-1)}) < abs(hit_locker{7,hit_duplicates(index)-1-(index-1)}))
+            error_locker = [error_locker,hit_locker(:,hit_duplicates(index)-1-(index-1))]; %move the error to the error locker
+            hit_locker(:,hit_duplicates(index)-1-(index-1)) = []; %remove the data from the hit locker
         else
-            error_locker = [error_locker,hit_locker(:,hit_duplicates(index)-1)]; %move the error to the error locker
-            hit_locker(:,hit_duplicates(index)-1) = []; %remove the data from the hit locker
+            error_locker = [error_locker,hit_locker(:,hit_duplicates(index)-(index-1))]; %move the error to the error locker
+            hit_locker(:,hit_duplicates(index)-(index-1)) = []; %remove the data from the hit locker
         end
         num_hits = num_hits - 1;
     end
+[~,hit_duplicates] = find([hit_locker{6,:},0]-[0,hit_locker{6,:}]==0);
 end
+fprintf('Step 13 duration: %d\n',toc);
 
 
-%% Step 12: analysis
+%% Step 14: analysis
+tic;
+fprintf('Number of errors detected: %d \n',num_errors);
 
-fprintf('Number of errors detected: %d \n',length(hit_duplicates));
-
-timing_error_mean = mean([hit_locker{7,:}])/tq;
-timing_error_std = std([hit_locker{7,:}])/tq;
+timing_error_mean = mean([hit_locker{7,:}])*tq;
+timing_error_std = std([hit_locker{7,:}])*tq;
 amplitude_error_mean = mean([hit_locker{8,:}]);
 amplitude_error_std = std([hit_locker{8,:}]);
 
@@ -455,7 +502,7 @@ fprintf('Amplitude error: %d, Sigma: %d\n',amplitude_error_mean,amplitude_error_
 if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     
     figure();
-    hist([hit_locker{7,:}]/tq,30);
+    hist([hit_locker{7,:}]*tq,30);
     hold on;
     title('Error in timing reconstruction');
     
@@ -464,3 +511,4 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     hold on;
     title('Error in amplitude reconstruction');
 end
+fprintf('Step 14 duration: %d\n',toc);
