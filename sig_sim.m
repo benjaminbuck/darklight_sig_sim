@@ -13,7 +13,9 @@ rate_sep_mean = 1/100e3;
 %event magnitude information
 mag_mean = 1;
 mag_sd = 0.4;
-%!!!!TO DO CHECK THIS DIST...
+%RMS = sqrt(mean^2+sd^2)
+rms_signal = sqrt(mag_mean^2+mag_sd^2);
+%!!!!TODO CHECK THIS DIST...
 
 %Sampeling information (seconds)
 t_sample = 1/100e6;
@@ -25,12 +27,12 @@ if sample_by_quanta < 10
 end
 
 %Noise information
-noise_det_mag = mag_mean / 10000; %~80dB noise floor
+noise_det_rms = rms_signal / 10000; %~80dB noise floor
 
-noise_shaper_mag = mag_mean / 10000;
+noise_shaper_rms = rms_signal / 10000;
 
 %simulation time (in seconds)
-t_simulation = 500e-6;
+t_simulation = 1000e-6;
 
 %gaussian shaping properties
 t_shape = 40e-9;%shaping time in seconds
@@ -98,6 +100,8 @@ if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     title('Histogram of time between event locations');
 end
 
+num_input_pulses = sum(sim_space(1,:));
+
 fprintf('Step 1 duration: %d\n',toc);
 
 %% Step 2: generate event time magnitudes
@@ -125,7 +129,7 @@ fprintf('Step 2a duration: %d\n',toc);
 
 %% Step 3: generate noise events
 tic;
-sim_space(3,:) = sim_space(2,:)+normrnd(0, noise_det_mag, [1, num_tq]);
+sim_space(3,:) = sim_space(2,:)+normrnd(0, noise_det_rms, [1, num_tq]);
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     figure();
     plot(sim_space(3,:),'-o')
@@ -150,6 +154,7 @@ shape_coeff = (1/(shape_sd*sqrt(2*pi)))*exp((-1/2)*(((1:9*shape_sd)-shape_mean)/
 %shape_coeff = shape_coeff / (1/(shape_sd*sqrt(2*pi)));
 %above was old.  Now we integrate.
 shape_coeff = shape_coeff/sum(shape_coeff);
+hit_scale_factor = max(shape_coeff);
 
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     figure();
@@ -176,7 +181,7 @@ fprintf('Step 4 duration: %d\n',toc);
 
 %% Step 5: add electronic noise to output
 tic;
-sim_space(5,:) = sim_space(4,:)+normrnd(0, noise_shaper_mag, [1, num_tq]);
+sim_space(5,:) = sim_space(4,:)+normrnd(0, noise_shaper_rms, [1, num_tq]);
 if (gen_all_plots == 1) || (gen_sig_shaping_plots == 1)
     figure();
     plot(sim_space(5,:),'-o')
@@ -208,17 +213,17 @@ fprintf('Step 6 duration: %d\n',toc);
 %max value calculation
 tic;
 max_val = 2^sample_bits-1;
-max_analog_val = mag_sd*5*max(shape_coeff);
-offset_val = mag_sd*0.8*max(shape_coeff);
+max_analog_val = mag_sd*5*hit_scale_factor;
+offset_val = mag_sd*0.8*hit_scale_factor;
 
-%insert clipping function here.
+%TODO insert clipping function here.
 dig_space(3,:) = dig_space(2,:); %placeholder for clipped values
 
 %perform quantization, using floor
 dig_space(4,:) = floor((dig_space(3,:)+offset_val)/max_analog_val*max_val);
 
 %quantization error:
-dig_space(5,:) = (dig_space(4,:)-dig_space(2,:)/max_analog_val*max_val);
+dig_space(5,:) = (dig_space(4,:)-(dig_space(2,:)+offset_val)/max_analog_val*max_val);
 
 if (gen_all_plots == 1) || (gen_dig_plots == 1)
     figure();
@@ -237,6 +242,9 @@ if (gen_all_plots == 1) || (gen_dig_plots == 1)
     hold on;
     title('Dig space 5: Quantization error in LSBs');
 end
+
+fprintf('Quantization Error - Mean: %d counts, Sigma: %d counts\n',mean(dig_space(5,:)), std(dig_space(5,:)));
+
 fprintf('Step 7 duration: %d\n',toc);
 
 %% Step 8: non-linear cliping operation
@@ -296,8 +304,9 @@ tic;
 %match
 %associated with the hit
 %Set threshold based on the DC offset and the noise floor:
-threshold = ((noise_det_mag+noise_shaper_mag)*6)/max_analog_val*max_val+10;
-%threshold is the offset value, plus 6 sigma of the noise plus 10 counts.
+threshold = ((noise_det_rms+noise_shaper_rms)*3)/max_analog_val*max_val+10;
+%threshold is the offset value, plus 3 sigma of the noise plus 10 counts.
+%TODO eval if this threshold is actualy what it claims to be
 
 %number of samples on the edge of a hit to grab:
 edge_grab = 2;
@@ -432,7 +441,7 @@ if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     figure();
     plot([hit_locker{5,:}],[hit_locker{4,:}], '*r','MarkerSize', 10);
     hold on;
-    plot(input_hits(1,:),input_hits(2,:), 'ob');
+    plot(input_hits(1,:),input_hits(2,:)*hit_scale_factor, 'ob');
     title('Hit Locations overlayed on Orig. Hits');
     
     figure();
@@ -488,6 +497,9 @@ fprintf('Step 13 duration: %d\n',toc);
 
 %% Step 14: analysis
 tic;
+[~,num_good_hits]=size(hit_locker);
+fprintf('Number of hits input: %d \n',num_input_pulses);
+fprintf('Number of hits recovered: %d \n',num_good_hits);
 fprintf('Number of errors detected: %d \n',num_errors);
 
 timing_error_mean = mean([hit_locker{7,:}])*tq;
