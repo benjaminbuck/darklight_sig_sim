@@ -32,7 +32,7 @@ noise_det_rms = rms_signal / 10000; %~80dB noise floor
 noise_shaper_rms = rms_signal / 10000;
 
 %simulation time (in seconds)
-t_simulation = 1000e-6;
+t_simulation = 5000e-6;
 
 %gaussian shaping properties
 t_shape = 40e-9;%shaping time in seconds
@@ -88,6 +88,8 @@ while index < num_tq
     event_space_tracker = horzcat(event_space_tracker, event_space);
     index = index + event_space;
 end
+%now we remove that first event, because it causes problems later
+sim_space(1,1) = 0;
 
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     figure();
@@ -129,7 +131,7 @@ fprintf('Step 2a duration: %d\n',toc);
 
 %% Step 3: generate noise events
 tic;
-sim_space(3,:) = sim_space(2,:)+normrnd(0, noise_det_rms, [1, num_tq]);
+sim_space(3,:) = sim_space(2,:)+pinknoise(num_tq,noise_det_rms);
 if (gen_all_plots == 1) || (gen_sig_gen_plots == 1)
     figure();
     plot(sim_space(3,:),'-o')
@@ -181,7 +183,7 @@ fprintf('Step 4 duration: %d\n',toc);
 
 %% Step 5: add electronic noise to output
 tic;
-sim_space(5,:) = sim_space(4,:)+normrnd(0, noise_shaper_rms, [1, num_tq]);
+sim_space(5,:) = sim_space(4,:)+pinknoise(num_tq,noise_shaper_rms);
 if (gen_all_plots == 1) || (gen_sig_shaping_plots == 1)
     figure();
     plot(sim_space(5,:),'-o')
@@ -347,13 +349,13 @@ while index <= num_samples
             hit_locker{hit_id}(1) = index-edge_grab;
             hit_index = 2;
             while (hit_index-1 <= edge_grab)
-                hit_locker{hit_id}(hit_index) = dig_space(7,index-edge_grab+hit_index-2);    %hit_index-2 is zero for the first iteration
+                hit_locker{hit_id}(hit_index) = dig_space(7,index-edge_grab+hit_index-2);    %hit_index-2 is zero for the first iteration.  This is in place because the first field is the hit time location
                 hit_index = hit_index + 1;
             end
         end
         %ok, now we have gathered all of the previous hits, time to start
         %gathering the normal hits
-        while (dig_space(7,index) >= threshold)
+        while ((dig_space(7,index) >= threshold) && (index <= num_samples))
             hit_locker{hit_id}(hit_index) = dig_space(7,index);
             hit_index = hit_index + 1;
             index = index + 1;
@@ -434,7 +436,7 @@ tic;
 % hit_locker{5,:} = zeros(num_hits,1);
 for index = (1:num_hits)
     hit_locker{4,index} = hit_locker{2,index}.a1*max_analog_val/max_val; %y values
-    hit_locker{5,index} = (hit_locker{2,index}.b1+hit_locker{1,index}(1))*tq_sample-shape_mean; %x values
+    hit_locker{5,index} = (hit_locker{2,index}.b1+hit_locker{1,index}(1))*tq_sample-shape_mean; %x values in tq
 end
 if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     
@@ -460,8 +462,8 @@ tic;
 
 for index = 1:num_hits
     [~,hit_locker{6,index}] = min(abs(input_hits(1,:)-hit_locker{5,index})); %here we locate the smallest time difference
-    hit_locker{7,index} = hit_locker{5,index}-input_hits(1,hit_locker{6,index}); %publish the time difference
-    hit_locker{8,index} = hit_locker{4,index}-input_hits(2,hit_locker{6,index}); %publish amplitude difference
+    hit_locker{7,index} = (hit_locker{5,index}-input_hits(1,hit_locker{6,index}))./(input_hits(1,hit_locker{6,index})); %publish the time error, units are percent error
+    hit_locker{8,index} = (hit_locker{4,index}-input_hits(2,hit_locker{6,index})*hit_scale_factor)./(input_hits(2,hit_locker{6,index})*hit_scale_factor); %publish amplitude error
 end
 
 %now detect if any cells have the same index as their previous
@@ -502,8 +504,8 @@ fprintf('Number of hits input: %d \n',num_input_pulses);
 fprintf('Number of hits recovered: %d \n',num_good_hits);
 fprintf('Number of errors detected: %d \n',num_errors);
 
-timing_error_mean = mean([hit_locker{7,:}])*tq;
-timing_error_std = std([hit_locker{7,:}])*tq;
+timing_error_mean = mean([hit_locker{7,:}]);
+timing_error_std = std([hit_locker{7,:}]);
 amplitude_error_mean = mean([hit_locker{8,:}]);
 amplitude_error_std = std([hit_locker{8,:}]);
 
@@ -514,7 +516,7 @@ fprintf('Amplitude error: %d, Sigma: %d\n',amplitude_error_mean,amplitude_error_
 if (gen_all_plots == 1) || (gen_hit_find_plots == 1)
     
     figure();
-    hist([hit_locker{7,:}]*tq,30);
+    hist([hit_locker{7,:}],30);
     hold on;
     title('Error in timing reconstruction');
     
